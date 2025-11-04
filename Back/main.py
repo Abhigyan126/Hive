@@ -2,9 +2,9 @@ from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from flask_pymongo import PyMongo
 from flask_bcrypt import Bcrypt
-from flask_jwt_extended import create_access_token, decode_token
+from flask_jwt_extended import create_access_token, decode_token, JWTManager
 from datetime import timedelta
-from bson import ObjectId
+from bson.objectid import ObjectId
 from dotenv import load_dotenv
 import hashlib
 import base64
@@ -40,6 +40,9 @@ except Exception as e:
 app.config["JWT_SECRET_KEY"] = secret
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 app.config["JWT_ACCESS_COOKIE_NAME"] = "access_token"
+
+# Initialize JWTManager
+jwt = JWTManager(app)
 
 # Helper Function to extract username from cookie
 def get_username_from_jwt():
