@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Terminal, LogIn, UserPlus, X, Check } from 'lucide-react';
 import { authAPI } from '../components/api';
-import { Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export default function Login() {
   const [activeTab, setActiveTab] = useState('login');
@@ -10,7 +10,7 @@ export default function Login() {
   const [output, setOutput] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const navigate = Navigate();
+  const navigate = useNavigate();
 
   const validateEmail = (email) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
