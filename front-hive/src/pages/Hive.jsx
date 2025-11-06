@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Send, History, X, Hexagon, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const GRID_SIZE = 50;
 const API_URL = 'http://localhost:5001';
@@ -12,6 +13,8 @@ export default function HiveComponent() {
   const [isCreatingHive, setIsCreatingHive] = useState(false);
   const [newHiveName, setNewHiveName] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // State for search term
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchHives();
@@ -62,7 +65,7 @@ export default function HiveComponent() {
   };
 
   const handleHiveClick = (hiveName) => {
-    console.log('Hive clicked:', hiveName);
+    navigate(`/create-hive/${hiveName}`);
   };
 
   const handleSend = () => {
