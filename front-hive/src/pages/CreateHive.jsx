@@ -12,7 +12,7 @@ import ReactFlow, {
   Handle,
   Position,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, SquarePlus, X, Search, Trash2, Code, Save } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, X, Search, Trash2, Code, Save, Plus } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import 'reactflow/dist/style.css';
@@ -176,8 +176,8 @@ const setupMonacoEditor = (monaco) => {
       PYTHON_COMMON_SNIPPETS.forEach((snippet) => {
         suggestions.push({
           label: snippet.label,
-          kind: snippet.kind === 'Snippet' 
-            ? monaco.languages.CompletionItemKind.Snippet 
+          kind: snippet.kind === 'Snippet'
+            ? monaco.languages.CompletionItemKind.Snippet
             : monaco.languages.CompletionItemKind.Function,
           insertText: snippet.insertText,
           insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -340,7 +340,7 @@ function HiveFlow() {
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     setupMonacoEditor(monaco);
-    
+
     // Enable suggestions on trigger characters
     editor.updateOptions({
       quickSuggestions: {
@@ -535,27 +535,32 @@ function HiveFlow() {
         <button className="text-white/80 hover:text-white transition-colors">
           <Menu size={20} />
         </button>
-        
+
         {/* Save Button */}
         <button
           onClick={saveHiveData}
           disabled={saveStatus === 'saving'}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${
+          className={`flex items-center rounded-lg transition-all ${
             saveStatus === 'saved'
-              ? 'bg-green-500/20 text-green-300 border border-green-400/30'
+              ? 'text-green-300'
               : saveStatus === 'error'
-              ? 'bg-red-500/20 text-red-300 border border-red-400/30'
+              ? 'text-red-300'
               : saveStatus === 'saving'
-              ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30 opacity-70'
-              : 'bg-white/10 text-white/80 hover:bg-white/20 border border-white/20'
+              ? 'text-blue-300 opacity-70'
+              : 'text-white/80 hover:bg-white/20'
           }`}
         >
-          <Save size={16} />
-          {saveStatus === 'saving' && 'Saving...'}
-          {saveStatus === 'saved' && 'Saved!'}
-          {saveStatus === 'error' && 'Error'}
-          {!saveStatus && 'Save Hive'}
+          <Save size={24} />
         </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowNodePanel(!showNodePanel)}
+            className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20"
+          >
+            <Plus size={24} />
+          </button>
+        </div>
 
         <div className="flex items-center gap-2">
           <Hexagon size={24} className="text-white/80" />
@@ -765,12 +770,6 @@ function HiveFlow() {
         <Background variant="dots" gap={50} size={1} color="rgba(255,255,255,0.1)" />
         {!showQueenForm && (
           <Panel position="bottom-left">
-            <button
-              onClick={() => setShowNodePanel(true)}
-              className="flex items-center bg-white hover:bg-white/95 text-black transition-all p-[1px] translate-x-8"
-            >
-              <SquarePlus size={21} />
-            </button>
           </Panel>
         )}
         </ReactFlow>
