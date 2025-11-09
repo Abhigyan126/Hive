@@ -50,6 +50,153 @@ const NODE_TYPES_CONFIG = [
 ];
 
 // =======================================================
+// 🎯 PYTHON AUTOCOMPLETE SETUP
+// =======================================================
+
+const PYTHON_KEYWORDS = [
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
+  'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
+  'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal',
+  'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
+];
+
+const PYTHON_BUILTINS = [
+  'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'breakpoint', 'bytearray',
+  'bytes', 'callable', 'chr', 'classmethod', 'compile', 'complex', 'delattr',
+  'dict', 'dir', 'divmod', 'enumerate', 'eval', 'exec', 'filter', 'float',
+  'format', 'frozenset', 'getattr', 'globals', 'hasattr', 'hash', 'help',
+  'hex', 'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len',
+  'list', 'locals', 'map', 'max', 'memoryview', 'min', 'next', 'object',
+  'oct', 'open', 'ord', 'pow', 'print', 'property', 'range', 'repr',
+  'reversed', 'round', 'set', 'setattr', 'slice', 'sorted', 'staticmethod',
+  'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip', '__import__'
+];
+
+const PYTHON_COMMON_SNIPPETS = [
+  {
+    label: 'if',
+    kind: 'Snippet',
+    insertText: 'if ${1:condition}:\n    ${2:pass}',
+    documentation: 'If statement'
+  },
+  {
+    label: 'elif',
+    kind: 'Snippet',
+    insertText: 'elif ${1:condition}:\n    ${2:pass}',
+    documentation: 'Elif statement'
+  },
+  {
+    label: 'else',
+    kind: 'Snippet',
+    insertText: 'else:\n    ${1:pass}',
+    documentation: 'Else statement'
+  },
+  {
+    label: 'for',
+    kind: 'Snippet',
+    insertText: 'for ${1:item} in ${2:iterable}:\n    ${3:pass}',
+    documentation: 'For loop'
+  },
+  {
+    label: 'while',
+    kind: 'Snippet',
+    insertText: 'while ${1:condition}:\n    ${2:pass}',
+    documentation: 'While loop'
+  },
+  {
+    label: 'def',
+    kind: 'Snippet',
+    insertText: 'def ${1:function_name}(${2:parameters}):\n    ${3:pass}',
+    documentation: 'Function definition'
+  },
+  {
+    label: 'class',
+    kind: 'Snippet',
+    insertText: 'class ${1:ClassName}:\n    def __init__(self${2:, parameters}):\n        ${3:pass}',
+    documentation: 'Class definition'
+  },
+  {
+    label: 'try',
+    kind: 'Snippet',
+    insertText: 'try:\n    ${1:pass}\nexcept ${2:Exception} as ${3:e}:\n    ${4:pass}',
+    documentation: 'Try-except block'
+  },
+  {
+    label: 'with',
+    kind: 'Snippet',
+    insertText: 'with ${1:expression} as ${2:variable}:\n    ${3:pass}',
+    documentation: 'With statement'
+  },
+  {
+    label: 'print',
+    kind: 'Function',
+    insertText: 'print(${1:})',
+    documentation: 'Print to console'
+  }
+];
+
+// Setup Monaco Editor with Python autocomplete
+const setupMonacoEditor = (monaco) => {
+  // Register completion provider for Python
+  monaco.languages.registerCompletionItemProvider('python', {
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
+
+      const suggestions = [];
+
+      // Add keyword suggestions
+      PYTHON_KEYWORDS.forEach((keyword) => {
+        suggestions.push({
+          label: keyword,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: keyword,
+          range: range,
+          documentation: `Python keyword: ${keyword}`,
+        });
+      });
+
+      // Add builtin function suggestions
+      PYTHON_BUILTINS.forEach((builtin) => {
+        suggestions.push({
+          label: builtin,
+          kind: monaco.languages.CompletionItemKind.Function,
+          insertText: builtin + '()',
+          range: range,
+          documentation: `Python builtin: ${builtin}`,
+        });
+      });
+
+      // Add snippet suggestions
+      PYTHON_COMMON_SNIPPETS.forEach((snippet) => {
+        suggestions.push({
+          label: snippet.label,
+          kind: snippet.kind === 'Snippet' 
+            ? monaco.languages.CompletionItemKind.Snippet 
+            : monaco.languages.CompletionItemKind.Function,
+          insertText: snippet.insertText,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          range: range,
+          documentation: snippet.documentation,
+        });
+      });
+
+      return { suggestions };
+    },
+  });
+
+  // Configure editor options for better autocomplete experience
+  monaco.languages.setLanguageConfiguration('python', {
+    wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
+  });
+};
+
+// =======================================================
 // 🧩 DYNAMIC NODE COMPONENT FACTORY
 // =======================================================
 
@@ -108,10 +255,30 @@ function HiveFlow() {
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [currentCode, setCurrentCode] = useState('');
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const editorRef = useRef(null);
 
   const { fitView } = useReactFlow();
   const reactFlowWrapper = useRef(null);
   const { project } = useReactFlow();
+
+  // Handle editor mount
+  const handleEditorDidMount = (editor, monaco) => {
+    editorRef.current = editor;
+    setupMonacoEditor(monaco);
+    
+    // Enable suggestions on trigger characters
+    editor.updateOptions({
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: false
+      },
+      suggestOnTriggerCharacters: true,
+      acceptSuggestionOnCommitCharacter: true,
+      acceptSuggestionOnEnter: 'on',
+      tabCompletion: 'on',
+    });
+  };
 
   // 🕸️ Connections
   const onConnect = useCallback(
@@ -377,12 +544,28 @@ function HiveFlow() {
               theme="vs-dark"
               value={currentCode}
               onChange={(value) => setCurrentCode(value || '')}
+              onMount={handleEditorDidMount}
               options={{
                 minimap: { enabled: false },
                 fontSize: 14,
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: {
+                  other: true,
+                  comments: false,
+                  strings: false
+                },
+                acceptSuggestionOnCommitCharacter: true,
+                acceptSuggestionOnEnter: 'on',
+                tabCompletion: 'on',
+                wordBasedSuggestions: true,
+                suggest: {
+                  showKeywords: true,
+                  showSnippets: true,
+                  showFunctions: true,
+                },
               }}
             />
           </div>
