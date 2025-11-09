@@ -16,56 +16,83 @@ import { Hexagon, ArrowLeft, Menu, Plus, X, Search, Trash2 } from 'lucide-react'
 import { useParams } from 'react-router-dom';
 import 'reactflow/dist/style.css';
 
-// ===== Node Components =====
+// =======================================================
+// 🎛️ NODE CONFIGURATION
+// =======================================================
 
-const QueenNode = ({ data, selected }) => (
-  <div
-    className={`relative px-4 py-3 rounded-xl bg-purple-500/30 border shadow-lg text-center text-white w-full h-full flex items-center justify-center transition-all ${
-      selected
-        ? 'border-purple-400 shadow-[0_0_12px_rgba(192,132,252,0.8)]'
-        : 'border-purple-400/40'
-    }`}
-  >
-    <Handle
-      type="source"
-      position={Position.Bottom}
-      id="queen-output"
-      style={{ background: '#c084fc', width: 10, height: 10 }}
-    />
-    <span className="font-semibold text-lg">{data.label}</span>
-  </div>
-);
+const NODE_TYPES_CONFIG = [
+  {
+    type: 'queen',
+    name: 'Queen Node',
+    description: 'Primary controller node — only one allowed',
+    color: '#a855f7', // purple
+    bg: 'bg-purple-500/30',
+    border: 'border-purple-400/40',
+    glow: 'shadow-[0_0_12px_rgba(192,132,252,0.8)]',
+    handles: [{ type: 'source', position: Position.Bottom, color: '#c084fc' }],
+    deletable: false,
+  },
+  {
+    type: 'code',
+    name: 'Code Node',
+    description: 'A standard worker node for code execution',
+    color: '#facc15', // yellow
+    bg: 'bg-yellow-500/30',
+    border: 'border-yellow-400/40',
+    glow: 'shadow-[0_0_12px_rgba(250,204,21,0.8)]',
+    handles: [
+      { type: 'target', position: Position.Left, color: '#facc15' },
+      { type: 'source', position: Position.Right, color: '#facc15' },
+    ],
+    deletable: true,
+  },
+];
 
-const BeeNode = ({ data, selected }) => (
-  <div
-    className={`relative px-4 py-2 rounded-xl bg-yellow-500/30 border shadow-lg text-center text-white w-full h-full flex items-center justify-center transition-all ${
-      selected
-        ? 'border-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.8)]'
-        : 'border-yellow-400/40'
-    }`}
-  >
-    <Handle
-      type="target"
-      position={Position.Left}
-      id="bee-input"
-      style={{ background: '#facc15', width: 10, height: 10 }}
-    />
-    <span className="font-medium">{data.label}</span>
-    <Handle
-      type="source"
-      position={Position.Right}
-      id="bee-output"
-      style={{ background: '#facc15', width: 10, height: 10 }}
-    />
-  </div>
-);
+// =======================================================
+// 🧩 DYNAMIC NODE COMPONENT FACTORY
+// =======================================================
 
-const nodeTypes = {
-  queen: QueenNode,
-  bee: BeeNode,
+const NodeComponent = ({ data, selected, nodeType }) => {
+  const config = NODE_TYPES_CONFIG.find((n) => n.type === nodeType);
+  if (!config) return null;
+
+  return (
+    <div
+      className={`relative px-4 py-3 rounded-xl ${config.bg} border shadow-lg text-center text-white flex items-center justify-center transition-all ${
+        selected
+          ? `${config.glow} border-opacity-100`
+          : `${config.border}`
+      }`}
+    >
+      {config.handles.map((h, i) => (
+        <Handle
+          key={i}
+          type={h.type}
+          position={h.position}
+          id={`${nodeType}-handle-${i}`}
+          style={{
+            background: h.color,
+            width: 10,
+            height: 10,
+          }}
+        />
+      ))}
+      <span className="font-medium">{data.label}</span>
+    </div>
+  );
 };
 
-// ====== Main Flow Component ======
+// Build nodeTypes map for ReactFlow
+const nodeTypes = NODE_TYPES_CONFIG.reduce((acc, cfg) => {
+  acc[cfg.type] = (props) => (
+    <NodeComponent {...props} nodeType={cfg.type} />
+  );
+  return acc;
+}, {});
+
+// =======================================================
+// 🐝 MAIN FLOW
+// =======================================================
 
 function HiveFlow() {
   const { hiveName } = useParams();
@@ -80,8 +107,7 @@ function HiveFlow() {
 
   const { fitView } = useReactFlow();
 
-  // ============ Connect and Delete Handlers ============
-
+  // 🕸️ Connections
   const onConnect = useCallback(
     (params) =>
       setEdges((eds) =>
@@ -102,6 +128,7 @@ function HiveFlow() {
     [setEdges, selectedEdge]
   );
 
+  // 🧹 Prevent deleting the queen
   const onNodesDelete = useCallback(
     (deleted) => {
       const protectedQueen = deleted.find((n) => n.id === 'queen');
@@ -112,9 +139,12 @@ function HiveFlow() {
     [setNodes]
   );
 
+  // 👑 Create Queen Node
   const handleAddQueen = (e) => {
     e.preventDefault();
     if (!queenName.trim()) return;
+
+    const queenConfig = NODE_TYPES_CONFIG.find((n) => n.type === 'queen');
 
     const queenNode = {
       id: 'queen',
@@ -128,17 +158,23 @@ function HiveFlow() {
     setTimeout(() => fitView(), 300);
   };
 
-  const addBeeNode = () => {
+  // ➕ Add Node
+  const addNode = (type) => {
+    const config = NODE_TYPES_CONFIG.find((n) => n.type === type);
+    if (!config) return;
+
     const newNode = {
       id: `${Date.now()}`,
-      type: 'bee',
+      type: config.type,
       position: { x: Math.random() * 500, y: Math.random() * 400 + 150 },
-      data: { label: 'Code Node' },
+      data: { label: config.name },
     };
+
     setNodes((nds) => [...nds, newNode]);
     setShowNodePanel(false);
   };
 
+  // 🧭 Selection Logic
   const handleNodeClick = (event, node) => {
     setSelectedNode(node);
     setSelectedEdge(null);
@@ -150,8 +186,13 @@ function HiveFlow() {
     setSelectedNode(null);
   };
 
+  // 🗑️ Delete Node
   const deleteSelectedNode = () => {
-    if (!selectedNode || selectedNode.id === 'queen') return;
+    if (!selectedNode) return;
+
+    const config = NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type);
+    if (!config?.deletable) return;
+
     setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
     setEdges((eds) =>
       eds.filter(
@@ -161,22 +202,18 @@ function HiveFlow() {
     setSelectedNode(null);
   };
 
+  // 🔍 Search available nodes
   const availableNodes = useMemo(
     () =>
-      [
-        {
-          name: 'Code Node',
-          description: 'A standard worker node for code execution',
-          type: 'bee',
-        },
-      ].filter((node) =>
-        node.name.toLowerCase().includes(searchTerm.toLowerCase())
+      NODE_TYPES_CONFIG.filter(
+        (node) =>
+          node.deletable &&
+          node.name.toLowerCase().includes(searchTerm.toLowerCase())
       ),
     [searchTerm]
   );
 
-  // ============ Highlight Edges ============
-
+  // 🎨 Highlight Selected Edge
   const highlightedEdges = edges.map((edge) => ({
     ...edge,
     style: {
@@ -190,7 +227,7 @@ function HiveFlow() {
 
   return (
     <div className="h-screen bg-black text-white overflow-hidden fixed inset-0">
-      {/* Top Nav */}
+      {/* Nav */}
       <nav className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 bg-white/5 border-b border-white/10 backdrop-blur-md">
         <button className="text-white/80 hover:text-white transition-colors">
           <ArrowLeft size={20} />
@@ -200,9 +237,7 @@ function HiveFlow() {
         </button>
         <div className="flex items-center gap-2">
           <Hexagon size={24} className="text-white/80" />
-          <h1 className="text-lg font-semibold">
-            {hiveName || 'Unnamed Hive'}
-          </h1>
+          <h1 className="text-lg font-semibold">{hiveName || 'Unnamed Hive'}</h1>
         </div>
       </nav>
 
@@ -248,11 +283,9 @@ function HiveFlow() {
             </button>
           </div>
 
-          <div className="text-white/60 italic mb-6">
-            (Node form coming soon)
-          </div>
+          <div className="text-white/60 italic mb-6">(Node form coming soon)</div>
 
-          {selectedNode.id !== 'queen' && (
+          {NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type)?.deletable && (
             <button
               onClick={deleteSelectedNode}
               className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg px-3 py-2 text-red-300 transition-all"
@@ -291,13 +324,11 @@ function HiveFlow() {
           <div className="flex-1 overflow-y-auto space-y-3">
             {availableNodes.map((node) => (
               <div
-                key={node.name}
-                onClick={() => addBeeNode(node)}
+                key={node.type}
+                onClick={() => addNode(node.type)}
                 className="bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-3 cursor-pointer transition-all"
               >
-                <h4 className="text-yellow-300 font-medium">
-                  {node.name}
-                </h4>
+                <h4 className="text-yellow-300 font-medium">{node.name}</h4>
                 <p className="text-white/60 text-sm">{node.description}</p>
               </div>
             ))}
@@ -310,7 +341,7 @@ function HiveFlow() {
         </div>
       )}
 
-      {/* React Flow Canvas */}
+      {/* ReactFlow Canvas */}
       <ReactFlow
         nodes={nodes}
         edges={highlightedEdges}
@@ -323,17 +354,11 @@ function HiveFlow() {
         connectionMode={ConnectionMode.Loose}
         nodeTypes={nodeTypes}
         fitView
-        className="bg-gray-950"
         deleteKeyCode={['Backspace', 'Delete']}
+        className="bg-gray-950"
       >
         <Controls />
-        <Background
-          variant="dots"
-          gap={50}
-          size={1}
-          color="rgba(255,255,255,0.1)"
-        />
-
+        <Background variant="dots" gap={50} size={1} color="rgba(255,255,255,0.1)" />
         {!showQueenForm && (
           <Panel position="bottom-left">
             <button
@@ -347,14 +372,12 @@ function HiveFlow() {
         )}
       </ReactFlow>
 
-      <style>{`
-        .react-flow__attribution { display: none !important; }
-      `}</style>
+      <style>{`.react-flow__attribution { display: none !important; }`}</style>
     </div>
   );
 }
 
-// Export with provider
+// Provider wrapper
 export default function CreateHive() {
   return (
     <ReactFlowProvider>
