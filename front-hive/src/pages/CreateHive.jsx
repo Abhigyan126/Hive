@@ -257,6 +257,8 @@ function HiveFlow() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [saveStatus, setSaveStatus] = useState(''); // 'saving', 'saved', 'error'
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
   const editorRef = useRef(null);
 
   const { fitView } = useReactFlow();
@@ -492,6 +494,42 @@ function HiveFlow() {
     setSelectedNode(null);
   };
 
+  // ✏️ Update Node Name
+  const updateNodeName = (newName) => {
+    if (!selectedNode) return;
+    
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === selectedNode.id
+          ? { ...node, data: { ...node.data, label: newName } }
+          : node
+      )
+    );
+    
+    setSelectedNode((prev) => ({
+      ...prev,
+      data: { ...prev.data, label: newName }
+    }));
+  };
+
+  // ✏️ Start Editing Name
+  const startEditingName = () => {
+    if (!selectedNode) return;
+    const config = NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type);
+    if (!config?.deletable) return;
+    
+    setTempName(selectedNode.data.label);
+    setIsEditingName(true);
+  };
+
+  // ✏️ Save Name
+  const saveName = () => {
+    if (tempName.trim()) {
+      updateNodeName(tempName.trim());
+    }
+    setIsEditingName(false);
+  };
+
   // 🔍 Search available nodes
   const availableNodes = useMemo(
     () =>
@@ -598,19 +636,59 @@ function HiveFlow() {
       {/* Node Info Panel */}
       {selectedNode && !showCodeEditor && (
         <div className="absolute right-0 top-0 z-30 h-full w-80 bg-gray-900 border-l border-white/10 p-4">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg font-semibold">
-              Node: {selectedNode.data.label}
-            </h3>
-            <button
-              onClick={() => setSelectedNode(null)}
-              className="text-white/60 hover:text-white"
-            >
-              <X size={20} />
-            </button>
+          <div className="mb-3">
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <span className="text-white/60">Bee:</span>
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveName();
+                    if (e.key === 'Escape') {
+                      setIsEditingName(false);
+                      setTempName('');
+                    }
+                  }}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    setIsEditingName(false);
+                    setTempName('');
+                  }}
+                  className="text-white/60 hover:text-white ml-2"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center">
+                <h3 
+                  onClick={startEditingName}
+                  className="text-lg font-semibold cursor-pointer hover:text-yellow-300 transition-colors"
+                >
+                  Bee: {selectedNode.data.label}
+                </h3>
+                <button
+                  onClick={() => setSelectedNode(null)}
+                  className="text-white/60 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="text-white/60 italic mb-6">(Node form coming soon)</div>
+          {selectedNode.type === 'queen' && (
+            <div className="text-white/60 italic mb-6">(Queen node - name cannot be changed)</div>
+          )}
+          {selectedNode.type !== 'queen' && (
+            <div className="text-white/60 italic mb-6">(Click "Bee: name" to rename)</div>
+          )}
 
           <div className="space-y-3">
             <button
