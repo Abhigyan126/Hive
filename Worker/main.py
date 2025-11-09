@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, g
 from datetime import datetime
 import uuid
 import os
+import json
 from flask_cors import CORS # New Import for CORS
 
 # --- Configuration ---
@@ -37,7 +38,7 @@ def close_connection(exception):
         db.close()
 
 def init_db():
-    """Initializes the database by creating the 'hives' table."""
+    """Initializes the database by creating the 'hives' and 'hive_data' tables."""
     # Use a temporary connection just for setup
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
@@ -54,6 +55,19 @@ def init_db():
             creation_datetime TEXT NOT NULL
         )
     """)
+    
+    # Create the hive_data table to store nodes and edges
+    # 'hive_name' is the primary key and must exist in the hives table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS hive_data (
+            hive_name TEXT PRIMARY KEY,
+            nodes_data TEXT NOT NULL,
+            edges_data TEXT NOT NULL,
+            last_updated TEXT NOT NULL,
+            FOREIGN KEY (hive_name) REFERENCES hives(name) ON DELETE CASCADE
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -132,6 +146,116 @@ def get_hives():
     hives_list = [dict(hive) for hive in hives_data]
 
     return jsonify(hives_list), 200
+
+
+@app.route('/api/hive/<hive_name>/save', methods=['POST'])
+def save_hive_data(hive_name):
+    """
+    API endpoint to save hive nodes and edges data.
+    Requires nodes and edges in the request body.
+    """
+    data = request.get_json()
+    
+    # 1. Validate input
+    if not data:
+        return jsonify({'error': 'No data provided.'}), 400
+    
+    nodes = data.get('nodes', [])
+    edges = data.get('edges', [])
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # 2. Check if hive exists in hives table
+        hive_exists = cursor.execute(
+            "SELECT name FROM hives WHERE name = ?",
+            (hive_name,)
+        ).fetchone()
+        
+        if not hive_exists:
+            return jsonify({'error': f"Hive '{hive_name}' does not exist in the hives table."}), 404
+        
+        # 3. Convert nodes and edges to JSON strings
+        nodes_json = json.dumps(nodes)
+        edges_json = json.dumps(edges)
+        current_time = datetime.now().isoformat()
+        
+        # 4. Insert or update hive data
+        cursor.execute("""
+            INSERT INTO hive_data (hive_name, nodes_data, edges_data, last_updated)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(hive_name) DO UPDATE SET
+                nodes_data = excluded.nodes_data,
+                edges_data = excluded.edges_data,
+                last_updated = excluded.last_updated
+        """, (hive_name, nodes_json, edges_json, current_time))
+        
+        conn.commit()
+        
+        return jsonify({
+            'message': 'Hive data saved successfully.',
+            'hive_name': hive_name,
+            'last_updated': current_time,
+            'nodes_count': len(nodes),
+            'edges_count': len(edges)
+        }), 200
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while saving hive data.'}), 500
+
+
+@app.route('/api/hive/<hive_name>/load', methods=['GET'])
+def load_hive_data(hive_name):
+    """
+    API endpoint to load hive nodes and edges data.
+    Returns the saved data if it exists, otherwise returns None.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Check if hive exists in hives table
+        hive_exists = cursor.execute(
+            "SELECT name FROM hives WHERE name = ?",
+            (hive_name,)
+        ).fetchone()
+        
+        if not hive_exists:
+            return jsonify({'error': f"Hive '{hive_name}' does not exist in the hives table."}), 404
+        
+        # 2. Fetch hive data
+        hive_data = cursor.execute(
+            "SELECT nodes_data, edges_data, last_updated FROM hive_data WHERE hive_name = ?",
+            (hive_name,)
+        ).fetchone()
+        
+        if not hive_data:
+            # No saved data exists yet
+            return jsonify({
+                'exists': False,
+                'hive_name': hive_name,
+                'message': 'No saved data found for this hive.'
+            }), 200
+        
+        # 3. Parse JSON data
+        nodes = json.loads(hive_data['nodes_data'])
+        edges = json.loads(hive_data['edges_data'])
+        
+        return jsonify({
+            'exists': True,
+            'hive_name': hive_name,
+            'nodes': nodes,
+            'edges': edges,
+            'last_updated': hive_data['last_updated']
+        }), 200
+        
+    except Exception as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while loading hive data.'}), 500
+
 
 # --- Running the Application ---
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo, useRef } from 'react';
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -12,7 +12,7 @@ import ReactFlow, {
   Handle,
   Position,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, SquarePlus, X, Search, Trash2, Code } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, SquarePlus, X, Search, Trash2, Code, Save } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import 'reactflow/dist/style.css';
@@ -255,11 +255,86 @@ function HiveFlow() {
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [currentCode, setCurrentCode] = useState('');
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [saveStatus, setSaveStatus] = useState(''); // 'saving', 'saved', 'error'
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const editorRef = useRef(null);
 
   const { fitView } = useReactFlow();
   const reactFlowWrapper = useRef(null);
   const { project } = useReactFlow();
+
+  // Load existing hive data on mount
+  useEffect(() => {
+    if (!hiveName) {
+      setIsLoadingData(false);
+      return;
+    }
+
+    const loadHiveData = async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:5001/api/hive/${encodeURIComponent(hiveName)}/load`);
+        const data = await response.json();
+
+        if (response.ok && data.exists && data.nodes && data.nodes.length > 0) {
+          // Load existing data
+          setNodes(data.nodes);
+          setEdges(data.edges || []);
+          setShowQueenForm(false);
+          setTimeout(() => fitView(), 300);
+        } else {
+          // No saved data, show queen form
+          setShowQueenForm(true);
+        }
+      } catch (error) {
+        console.error('Error loading hive data:', error);
+        // If error, continue with new hive creation
+        setShowQueenForm(true);
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    loadHiveData();
+  }, [hiveName, setNodes, setEdges, fitView]);
+
+  // Save hive data to backend
+  const saveHiveData = async () => {
+    if (!hiveName) {
+      alert('Hive name is required to save.');
+      return;
+    }
+
+    setSaveStatus('saving');
+
+    try {
+      const response = await fetch(`http://127.0.0.1:5001/api/hive/${encodeURIComponent(hiveName)}/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nodes: nodes,
+          edges: edges,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus(''), 2000);
+      } else {
+        setSaveStatus('error');
+        alert(data.error || 'Failed to save hive data.');
+        setTimeout(() => setSaveStatus(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error saving hive data:', error);
+      setSaveStatus('error');
+      alert('Failed to save hive data. Please try again.');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
+  };
 
   // Handle editor mount
   const handleEditorDidMount = (editor, monaco) => {
@@ -442,6 +517,16 @@ function HiveFlow() {
 
   return (
     <div className="h-screen bg-black text-white overflow-hidden fixed inset-0">
+      {/* Loading Overlay */}
+      {isLoadingData && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
+            <p className="text-white/80">Loading hive data...</p>
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 bg-white/5 border-b border-white/10 backdrop-blur-md">
         <button className="text-white/80 hover:text-white transition-colors">
@@ -450,6 +535,28 @@ function HiveFlow() {
         <button className="text-white/80 hover:text-white transition-colors">
           <Menu size={20} />
         </button>
+        
+        {/* Save Button */}
+        <button
+          onClick={saveHiveData}
+          disabled={saveStatus === 'saving'}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${
+            saveStatus === 'saved'
+              ? 'bg-green-500/20 text-green-300 border border-green-400/30'
+              : saveStatus === 'error'
+              ? 'bg-red-500/20 text-red-300 border border-red-400/30'
+              : saveStatus === 'saving'
+              ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30 opacity-70'
+              : 'bg-white/10 text-white/80 hover:bg-white/20 border border-white/20'
+          }`}
+        >
+          <Save size={16} />
+          {saveStatus === 'saving' && 'Saving...'}
+          {saveStatus === 'saved' && 'Saved!'}
+          {saveStatus === 'error' && 'Error'}
+          {!saveStatus && 'Save Hive'}
+        </button>
+
         <div className="flex items-center gap-2">
           <Hexagon size={24} className="text-white/80" />
           <h1 className="text-lg font-semibold">{hiveName || 'Unnamed Hive'}</h1>
