@@ -720,17 +720,25 @@ function HiveFlow() {
 
       {/* Code Editor Panel */}
       {showCodeEditor && selectedNode && (
-        <div className="absolute right-0 top-0 z-30 h-full w-[600px] bg-gray-900 border-l border-white/10 flex flex-col">
-          <div className="flex justify-between items-center p-4 border-b border-white/10">
+        <div className="absolute right-0 top-0 z-30 h-full p-1 w-[600px] bg-gray-900 border-l border-white/10 flex flex-col">
+          <div className="flex justify-between items-center p-1 border-b border-white/10">
             <h3 className="text-lg font-semibold">
               Code Editor - {selectedNode.data.label}
             </h3>
-            <button
-              onClick={() => setShowCodeEditor(false)}
-              className="text-white/60 hover:text-white"
-            >
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={saveCode}
+                className="flex items-center rounded-lg p-1 transition-all text-white/80 hover:bg-white/20"
+              >
+                <Save size={20} />
+              </button>
+              <button
+                onClick={() => setShowCodeEditor(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden">
@@ -766,20 +774,7 @@ function HiveFlow() {
             />
           </div>
 
-          <div className="p-4 border-t border-white/10 flex gap-3">
-            <button
-              onClick={saveCode}
-              className="flex-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded-lg px-4 py-2 text-green-300 transition-all"
-            >
-              Save Code
-            </button>
-            <button
-              onClick={() => setShowCodeEditor(false)}
-              className="flex-1 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-gray-300 transition-all"
-            >
-              Cancel
-            </button>
-          </div>
+
         </div>
       )}
 
