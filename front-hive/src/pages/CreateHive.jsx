@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useRef } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -12,7 +12,7 @@ import ReactFlow, {
   Handle,
   Position,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, Plus, X, Search, Trash2, Code } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, SquarePlus, X, Search, Trash2, Code } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import 'reactflow/dist/style.css';
@@ -107,8 +107,11 @@ function HiveFlow() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [currentCode, setCurrentCode] = useState('');
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   const { fitView } = useReactFlow();
+  const reactFlowWrapper = useRef(null);
+  const { project } = useReactFlow();
 
   // 🕸️ Connections
   const onConnect = useCallback(
@@ -154,7 +157,7 @@ function HiveFlow() {
       type: 'queen',
       position: { x: 300, y: 100 },
       data: { label: queenName, code: '' },
-  
+
     };
 
     setNodes([queenNode]);
@@ -170,13 +173,25 @@ function HiveFlow() {
     const newNode = {
       id: `${Date.now()}`,
       type: config.type,
-      position: { x: Math.random() * 500, y: Math.random() * 400 + 150 },
+      position: mousePosition,
       data: { label: config.name, code: '' },
     };
 
     setNodes((nds) => [...nds, newNode]);
     setShowNodePanel(false);
   };
+
+  // 🖱️ Track mouse position
+  const onMouseMove = useCallback((event) => {
+    if (reactFlowWrapper.current) {
+      const rect = reactFlowWrapper.current.getBoundingClientRect();
+      const position = project({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+      setMousePosition(position);
+    }
+  }, [project]);
 
   // 🧭 Selection Logic
   const handleNodeClick = (event, node) => {
@@ -202,7 +217,7 @@ function HiveFlow() {
   // 💾 Save Code to Node
   const saveCode = () => {
     if (!selectedNode) return;
-    
+
     setNodes((nds) =>
       nds.map((node) =>
         node.id === selectedNode.id
@@ -210,7 +225,7 @@ function HiveFlow() {
           : node
       )
     );
-    
+
     setShowCodeEditor(false);
     // Update selected node to reflect new code
     setSelectedNode((prev) => ({
@@ -434,7 +449,8 @@ function HiveFlow() {
       )}
 
       {/* ReactFlow Canvas */}
-      <ReactFlow
+      <div ref={reactFlowWrapper} className="h-full w-full" onMouseMove={onMouseMove}>
+        <ReactFlow
         nodes={nodes}
         edges={highlightedEdges}
         onNodesChange={onNodesChange}
@@ -461,14 +477,14 @@ function HiveFlow() {
           <Panel position="bottom-left">
             <button
               onClick={() => setShowNodePanel(true)}
-              className="flex items-center gap-2 bg-green-500/20 hover:bg-green-500/40 border border-green-400/30 rounded-lg px-3 py-2 text-green-300 transition-all"
+              className="flex items-center bg-white hover:bg-white/95 text-black transition-all p-[1px] translate-x-8"
             >
-              <Plus size={16} />
-              Add Node
+              <SquarePlus size={21} />
             </button>
           </Panel>
         )}
-      </ReactFlow>
+        </ReactFlow>
+      </div>
 
       <style>{`.react-flow__attribution { display: none !important; }`}</style>
     </div>
