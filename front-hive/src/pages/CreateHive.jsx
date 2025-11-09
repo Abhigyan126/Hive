@@ -12,7 +12,7 @@ import ReactFlow, {
   Handle,
   Position,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, X, Search, Trash2, Code, Save, Plus } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, X, Search, Trash2, Code, Save, Plus, Play } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import 'reactflow/dist/style.css';
@@ -497,7 +497,7 @@ function HiveFlow() {
   // ✏️ Update Node Name
   const updateNodeName = (newName) => {
     if (!selectedNode) return;
-    
+
     setNodes((nds) =>
       nds.map((node) =>
         node.id === selectedNode.id
@@ -505,7 +505,7 @@ function HiveFlow() {
           : node
       )
     );
-    
+
     setSelectedNode((prev) => ({
       ...prev,
       data: { ...prev.data, label: newName }
@@ -517,7 +517,7 @@ function HiveFlow() {
     if (!selectedNode) return;
     const config = NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type);
     if (!config?.deletable) return;
-    
+
     setTempName(selectedNode.data.label);
     setIsEditingName(true);
   };
@@ -566,19 +566,19 @@ function HiveFlow() {
       )}
 
       {/* Nav */}
-      <nav className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 bg-white/5 border-b border-white/10 backdrop-blur-md">
-        <button className="text-white/80 hover:text-white transition-colors">
-          <ArrowLeft size={20} />
+      <nav className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-2 py-1 bg-white/5 border-b border-white/10 backdrop-blur-md">
+        <button className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20">
+          <ArrowLeft size={24} />
         </button>
-        <button className="text-white/80 hover:text-white transition-colors">
-          <Menu size={20} />
+        <button className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20">
+          <Menu size={24} />
         </button>
 
         {/* Save Button */}
         <button
           onClick={saveHiveData}
           disabled={saveStatus === 'saving'}
-          className={`flex items-center rounded-lg transition-all ${
+          className={`flex items-center rounded-lg p-1 transition-all ${
             saveStatus === 'saved'
               ? 'text-green-300'
               : saveStatus === 'error'
@@ -591,7 +591,7 @@ function HiveFlow() {
           <Save size={24} />
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center">
           <button
             onClick={() => setShowNodePanel(!showNodePanel)}
             className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20"
@@ -600,7 +600,13 @@ function HiveFlow() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center">
+          <button className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20">
+            <Play size={24} />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
           <Hexagon size={24} className="text-white/80" />
           <h1 className="text-lg font-semibold">{hiveName || 'Unnamed Hive'}</h1>
         </div>
@@ -667,7 +673,7 @@ function HiveFlow() {
               </div>
             ) : (
               <div className="flex justify-between items-center">
-                <h3 
+                <h3
                   onClick={startEditingName}
                   className="text-lg font-semibold cursor-pointer hover:text-yellow-300 transition-colors"
                 >
