@@ -1,17 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import ReactFlow, {
-  MiniMap,
   Controls,
   Background,
   useNodesState,
   useEdgesState,
   addEdge,
   ConnectionMode,
-  Panel,
   useReactFlow,
   ReactFlowProvider,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, Plus, Minus } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, Plus } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import 'reactflow/dist/style.css';
 
@@ -61,38 +59,19 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
-// Main component that uses React Flow hooks
+// Main component
 function HiveFlow() {
   const { hiveName } = useParams();
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { fitView, zoomIn, zoomOut, setCenter } = useReactFlow();
 
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, style: { stroke: '#94a3b8' } }, eds)),
+    (params) =>
+      setEdges((eds) =>
+        addEdge({ ...params, style: { stroke: '#94a3b8' } }, eds)
+      ),
     [setEdges]
   );
-
-  const addNewNode = useCallback(() => {
-    const newNode = {
-      id: `${Date.now()}`,
-      type: 'custom',
-      position: {
-        x: Math.random() * 400,
-        y: Math.random() * 400,
-      },
-      data: { label: 'New Node' },
-    };
-    setNodes((nds) => [...nds, newNode]);
-  }, [setNodes]);
-
-  const handleCenter = useCallback(() => {
-    setCenter(0, 0, { zoom: 1 });
-  }, [setCenter]);
-
-  const handleFitView = useCallback(() => {
-    fitView();
-  }, [fitView]);
 
   return (
     <div className="h-screen bg-black text-white overflow-hidden fixed inset-0">
@@ -122,69 +101,23 @@ function HiveFlow() {
         connectionMode={ConnectionMode.Loose}
         nodeTypes={nodeTypes}
         fitView
-        className="bg-gray-950"
+        className="bg-gray-950 no-reactflow-brand"
       >
-        <Controls
-          className="bg-gray-900 border border-white/20 rounded-lg"
-          position="bottom-left"
-        />
-
-        <MiniMap
-          className="bg-gray-900 border border-white/20 rounded-lg"
-          nodeColor="rgba(16, 185, 129, 0.4)"
-          position="bottom-right"
-        />
-
+        <Controls />
         <Background
           variant="dots"
           gap={50}
           size={1}
           color="rgba(255, 255, 255, 0.1)"
         />
-
-        {/* Control Panel */}
-        <Panel position="top-right" className="space-y-2">
-          <button
-            onClick={addNewNode}
-            className="flex items-center gap-2 bg-green-500/20 hover:bg-green-500/40 border border-green-400/30 rounded-lg px-3 py-2 transition-all text-green-300 w-full"
-          >
-            <Plus size={16} />
-            Add Node
-          </button>
-          <button
-            onClick={handleFitView}
-            className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-400/30 rounded-lg px-3 py-2 transition-all text-blue-300 w-full"
-          >
-            Fit View
-          </button>
-          <button
-            onClick={handleCenter}
-            className="flex items-center gap-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-400/30 rounded-lg px-3 py-2 transition-all text-purple-300 w-full"
-          >
-            Reset Center
-          </button>
-        </Panel>
-
-        {/* Zoom Controls */}
-        <Panel position="bottom-left">
-          <div className="flex gap-1 bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-lg p-1">
-            <button
-              onClick={() => zoomIn()}
-              className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Zoom In"
-            >
-              <Plus size={16} />
-            </button>
-            <button
-              onClick={() => zoomOut()}
-              className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Zoom Out"
-            >
-              <Minus size={16} />
-            </button>
-          </div>
-        </Panel>
       </ReactFlow>
+
+      {/* Hide React Flow Branding */}
+      <style>{`
+        .react-flow__attribution {
+          display: none !important;
+        }
+      `}</style>
     </div>
   );
 }
