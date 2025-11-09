@@ -12,8 +12,9 @@ import ReactFlow, {
   Handle,
   Position,
 } from 'reactflow';
-import { Hexagon, ArrowLeft, Menu, Plus, X, Search, Trash2 } from 'lucide-react';
+import { Hexagon, ArrowLeft, Menu, Plus, X, Search, Trash2, Code } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import Editor from '@monaco-editor/react';
 import 'reactflow/dist/style.css';
 
 // =======================================================
@@ -104,6 +105,8 @@ function HiveFlow() {
   const [selectedEdge, setSelectedEdge] = useState(null);
   const [showNodePanel, setShowNodePanel] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
+  const [currentCode, setCurrentCode] = useState('');
 
   const { fitView } = useReactFlow();
 
@@ -150,7 +153,8 @@ function HiveFlow() {
       id: 'queen',
       type: 'queen',
       position: { x: 300, y: 100 },
-      data: { label: queenName },
+      data: { label: queenName, code: '' },
+  
     };
 
     setNodes([queenNode]);
@@ -167,7 +171,7 @@ function HiveFlow() {
       id: `${Date.now()}`,
       type: config.type,
       position: { x: Math.random() * 500, y: Math.random() * 400 + 150 },
-      data: { label: config.name },
+      data: { label: config.name, code: '' },
     };
 
     setNodes((nds) => [...nds, newNode]);
@@ -178,12 +182,41 @@ function HiveFlow() {
   const handleNodeClick = (event, node) => {
     setSelectedNode(node);
     setSelectedEdge(null);
+    setShowCodeEditor(false);
   };
 
   const handleEdgeClick = (event, edge) => {
     event.stopPropagation();
     setSelectedEdge(edge);
     setSelectedNode(null);
+    setShowCodeEditor(false);
+  };
+
+  // 💾 Open Code Editor
+  const openCodeEditor = () => {
+    if (!selectedNode) return;
+    setCurrentCode(selectedNode.data.code || '');
+    setShowCodeEditor(true);
+  };
+
+  // 💾 Save Code to Node
+  const saveCode = () => {
+    if (!selectedNode) return;
+    
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === selectedNode.id
+          ? { ...node, data: { ...node.data, code: currentCode } }
+          : node
+      )
+    );
+    
+    setShowCodeEditor(false);
+    // Update selected node to reflect new code
+    setSelectedNode((prev) => ({
+      ...prev,
+      data: { ...prev.data, code: currentCode }
+    }));
   };
 
   // 🗑️ Delete Node
@@ -269,7 +302,7 @@ function HiveFlow() {
       )}
 
       {/* Node Info Panel */}
-      {selectedNode && (
+      {selectedNode && !showCodeEditor && (
         <div className="absolute right-0 top-0 z-30 h-full w-80 bg-gray-900 border-l border-white/10 p-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-lg font-semibold">
@@ -285,15 +318,74 @@ function HiveFlow() {
 
           <div className="text-white/60 italic mb-6">(Node form coming soon)</div>
 
-          {NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type)?.deletable && (
+          <div className="space-y-3">
             <button
-              onClick={deleteSelectedNode}
-              className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg px-3 py-2 text-red-300 transition-all"
+              onClick={openCodeEditor}
+              className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-lg px-3 py-2 text-blue-300 transition-all w-full justify-center"
             >
-              <Trash2 size={16} />
-              Delete Node
+              <Code size={16} />
+              {selectedNode.data.code ? 'Edit Code' : 'Add Code'}
             </button>
-          )}
+
+            {NODE_TYPES_CONFIG.find((n) => n.type === selectedNode.type)?.deletable && (
+              <button
+                onClick={deleteSelectedNode}
+                className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg px-3 py-2 text-red-300 transition-all w-full justify-center"
+              >
+                <Trash2 size={16} />
+                Delete Node
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Code Editor Panel */}
+      {showCodeEditor && selectedNode && (
+        <div className="absolute right-0 top-0 z-30 h-full w-[600px] bg-gray-900 border-l border-white/10 flex flex-col">
+          <div className="flex justify-between items-center p-4 border-b border-white/10">
+            <h3 className="text-lg font-semibold">
+              Code Editor - {selectedNode.data.label}
+            </h3>
+            <button
+              onClick={() => setShowCodeEditor(false)}
+              className="text-white/60 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <Editor
+              height="100%"
+              defaultLanguage="python"
+              theme="vs-dark"
+              value={currentCode}
+              onChange={(value) => setCurrentCode(value || '')}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+              }}
+            />
+          </div>
+
+          <div className="p-4 border-t border-white/10 flex gap-3">
+            <button
+              onClick={saveCode}
+              className="flex-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded-lg px-4 py-2 text-green-300 transition-all"
+            >
+              Save Code
+            </button>
+            <button
+              onClick={() => setShowCodeEditor(false)}
+              className="flex-1 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-gray-300 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -355,6 +447,12 @@ function HiveFlow() {
         nodeTypes={nodeTypes}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
+        /* Disable spacebar behavior and use Alt for panning instead */
+        panOnDrag
+        panActivationKeyCode="Alt"
+        /* Be explicit about other key mappings to avoid accidental Space usage */
+        selectionKeyCode="Shift"
+        multiSelectionKeyCode="Control"
         className="bg-gray-950"
       >
         <Controls />
