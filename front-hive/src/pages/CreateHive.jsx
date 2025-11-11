@@ -553,6 +553,39 @@ function HiveFlow() {
     },
   }));
 
+  const execute = async () => {
+    try {
+      console.log("Running hive:", hiveName);
+
+      const response = await fetch(
+        `http://127.0.0.1:5001/api/hive/${encodeURIComponent(hiveName)}/execute`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Execution failed: ${errText}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Hive Execution Results:", data);
+
+      // Optional: pretty print in console
+      console.log("📘 Execution Order:", data.execution_order);
+      console.log("📊 Results per Node:", data.results);
+      console.log("💾 Final Data:", data.final_data);
+
+    } catch (error) {
+      console.error("❌ Error executing hive:", error);
+    }
+  };
+
+
   return (
     <div className="h-screen bg-black text-white overflow-hidden fixed inset-0">
       {/* Loading Overlay */}
@@ -601,7 +634,7 @@ function HiveFlow() {
         </div>
 
         <div className="flex items-center">
-          <button className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20">
+          <button className="text-white/80 hover:text-white transition-colors p-1 rounded hover:bg-white/20" onClick={execute}>
             <Play size={24} />
           </button>
         </div>

@@ -5,6 +5,11 @@ import uuid
 import os
 import json
 from flask_cors import CORS # New Import for CORS
+import io
+import contextlib
+import traceback
+import re
+
 
 # --- Configuration ---
 DATABASE = 'hive_data.db'
@@ -55,7 +60,7 @@ def init_db():
             creation_datetime TEXT NOT NULL
         )
     """)
-    
+
     # Create the hive_data table to store nodes and edges
     # 'hive_name' is the primary key and must exist in the hives table
     cursor.execute("""
@@ -67,7 +72,7 @@ def init_db():
             FOREIGN KEY (hive_name) REFERENCES hives(name) ON DELETE CASCADE
         )
     """)
-    
+
     conn.commit()
     conn.close()
 
@@ -155,32 +160,32 @@ def save_hive_data(hive_name):
     Requires nodes and edges in the request body.
     """
     data = request.get_json()
-    
+
     # 1. Validate input
     if not data:
         return jsonify({'error': 'No data provided.'}), 400
-    
+
     nodes = data.get('nodes', [])
     edges = data.get('edges', [])
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
         # 2. Check if hive exists in hives table
         hive_exists = cursor.execute(
             "SELECT name FROM hives WHERE name = ?",
             (hive_name,)
         ).fetchone()
-        
+
         if not hive_exists:
             return jsonify({'error': f"Hive '{hive_name}' does not exist in the hives table."}), 404
-        
+
         # 3. Convert nodes and edges to JSON strings
         nodes_json = json.dumps(nodes)
         edges_json = json.dumps(edges)
         current_time = datetime.now().isoformat()
-        
+
         # 4. Insert or update hive data
         cursor.execute("""
             INSERT INTO hive_data (hive_name, nodes_data, edges_data, last_updated)
@@ -190,9 +195,9 @@ def save_hive_data(hive_name):
                 edges_data = excluded.edges_data,
                 last_updated = excluded.last_updated
         """, (hive_name, nodes_json, edges_json, current_time))
-        
+
         conn.commit()
-        
+
         return jsonify({
             'message': 'Hive data saved successfully.',
             'hive_name': hive_name,
@@ -200,7 +205,7 @@ def save_hive_data(hive_name):
             'nodes_count': len(nodes),
             'edges_count': len(edges)
         }), 200
-        
+
     except Exception as e:
         conn.rollback()
         print(f"Database error: {e}")
@@ -215,23 +220,23 @@ def load_hive_data(hive_name):
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
         # 1. Check if hive exists in hives table
         hive_exists = cursor.execute(
             "SELECT name FROM hives WHERE name = ?",
             (hive_name,)
         ).fetchone()
-        
+
         if not hive_exists:
             return jsonify({'error': f"Hive '{hive_name}' does not exist in the hives table."}), 404
-        
+
         # 2. Fetch hive data
         hive_data = cursor.execute(
             "SELECT nodes_data, edges_data, last_updated FROM hive_data WHERE hive_name = ?",
             (hive_name,)
         ).fetchone()
-        
+
         if not hive_data:
             # No saved data exists yet
             return jsonify({
@@ -239,11 +244,11 @@ def load_hive_data(hive_name):
                 'hive_name': hive_name,
                 'message': 'No saved data found for this hive.'
             }), 200
-        
+
         # 3. Parse JSON data
         nodes = json.loads(hive_data['nodes_data'])
         edges = json.loads(hive_data['edges_data'])
-        
+
         return jsonify({
             'exists': True,
             'hive_name': hive_name,
@@ -251,10 +256,176 @@ def load_hive_data(hive_name):
             'edges': edges,
             'last_updated': hive_data['last_updated']
         }), 200
-        
+
     except Exception as e:
         print(f"Database error: {e}")
         return jsonify({'error': 'An internal error occurred while loading hive data.'}), 500
+
+class AttrDict(dict):
+    """
+    Attribute-accessible dict.
+    - Reading a missing attribute will raise AttributeError (no silent auto-create).
+    - Setting attributes will create values normally.
+    - Use .ensure(key) or .get(key, default) if you want safe creation.
+    """
+    def __getattr__(self, key):
+        if key in self:
+            val = self[key]
+            return val
+        raise AttributeError(f"Attribute '{key}' not found")
+
+    def __setattr__(self, key, value):
+        # allow setting like ad.foo = 1
+        dict.__setitem__(self, key, value)
+
+    def __getitem__(self, key):
+        # preserve normal dict semantics for []
+        return dict.__getitem__(self, key)
+
+    def setdefault(self, key, default=None):
+        # delegate to dict.setdefault
+        return dict.setdefault(self, key, default)
+
+    def ensure(self, key, default_factory=lambda: AttrDict()):
+        """
+        Ensure key exists. Returns the value (created if missing).
+        Useful in code that wants to create nested structures safely:
+            ad.ensure('count', default_factory=lambda: 0)
+        """
+        if key not in self:
+            self[key] = default_factory()
+        return self[key]
+
+def sanitize_name(name: str) -> str:
+    """Make sure label/id can be used as Python attribute."""
+    name = re.sub(r'[^0-9a-zA-Z_]', '_', name)
+    if name and name[0].isdigit():
+        name = "_" + name
+    return name or "node"
+
+@app.route('/api/hive/<hive_name>/execute', methods=['POST'])
+def execute_hive(hive_name):
+    """
+    Executes hive nodes sequentially in dependency order.
+    The node with type='queen' is treated as the starting point of execution.
+    Supports both parent→child and child→parent edge drawing directions.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    hive_data = cursor.execute(
+        "SELECT nodes_data, edges_data FROM hive_data WHERE hive_name = ?",
+        (hive_name,)
+    ).fetchone()
+
+    if not hive_data:
+        return jsonify({'error': f"No hive data found for {hive_name}"}), 404
+
+    nodes = json.loads(hive_data["nodes_data"])
+    edges = json.loads(hive_data["edges_data"])
+
+    # --- Build lookup maps ---
+    node_map = {n["id"]: n for n in nodes}
+    graph = {n["id"]: [] for n in nodes}
+
+    # --- Identify the queen node ---
+    queen_id = next((n["id"] for n in nodes if n.get("type") == "queen"), None)
+    if not queen_id:
+        return jsonify({'error': "No queen node found in this hive"}), 400
+
+    # --- Build dependency graph (normalize edge directions) ---
+    for e in edges:
+        src, tgt = e["source"], e["target"]
+        if src not in graph or tgt not in graph:
+            continue
+
+        src_node = node_map[src]
+        tgt_node = node_map[tgt]
+
+        # If queen is on target side, reverse edge direction
+        if tgt_node.get("type") == "queen":
+            src, tgt = tgt, src
+
+        graph[src].append(tgt)
+
+    # --- DFS traversal from queen ---
+    order = []
+    visited = set()
+
+    def dfs(node_id):
+        if node_id in visited:
+            return
+        visited.add(node_id)
+        order.append(node_id)
+        for child in graph.get(node_id, []):
+            dfs(child)
+
+    dfs(queen_id)
+
+    # Include unvisited nodes (not connected to queen)
+    for n in node_map:
+        if n not in visited:
+            order.append(n)
+
+    # --- Shared hive context ---
+    hive_key = sanitize_name(hive_name)
+    data = AttrDict()
+    data[hive_key] = AttrDict()
+
+    # Create per-node objects in hive
+    node_name_map = {}
+    for n in nodes:
+        label = (n.get("data") or {}).get("label") or n["id"]
+        node_name = sanitize_name(label)
+        data[hive_key][node_name] = AttrDict()
+        node_name_map[n["id"]] = node_name
+
+    results = {}
+
+    # --- Execute each node in order ---
+    for node_id in order:
+        node = node_map[node_id]
+        label = (node.get("data") or {}).get("label", "")
+        code = (node.get("data") or {}).get("code", "")
+        node_var = node_name_map[node_id]
+
+        exec_globals = {
+            hive_key: data[hive_key],
+            "__name__": "__main__",
+        }
+
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                exec(code, exec_globals)
+            results[node_id] = {
+                "label": label,
+                "status": "success",
+                "output": output.getvalue(),
+            }
+        except Exception as e:
+            results[node_id] = {
+                "label": label,
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
+        finally:
+            output.close()
+
+    # --- Convert final data for JSON output ---
+    def to_plain(x):
+        if isinstance(x, AttrDict):
+            return {k: to_plain(v) for k, v in x.items()}
+        return x
+
+    return jsonify({
+        "hive": hive_name,
+        "execution_order": order,
+        "node_map": node_name_map,
+        "results": results,
+        "final_data": {hive_key: to_plain(data[hive_key])}
+    }), 200
 
 
 # --- Running the Application ---
