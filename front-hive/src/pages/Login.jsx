@@ -36,7 +36,7 @@ export default function Login() {
       if (result.success) {
         addOutput('success', 'login', `Welcome! ${result.data.message || 'Login successful'}`);
         setLoginData({ email: '', password: '' });
-        navigate('/dashboard')
+        navigate('/')
 
         // Optional: Redirect or update app state here
         // Example: window.location.href = '/dashboard';
