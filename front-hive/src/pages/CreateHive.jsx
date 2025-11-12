@@ -814,14 +814,22 @@ function HiveFlow() {
       {/* Add Node Panel */}
       {showNodePanel && (
         <div className="absolute right-0 top-0 z-30 h-full w-96 bg-gray-900 border-l border-white/10 p-5 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Create Node</h3>
-            <button
-              onClick={() => setShowNodePanel(false)}
-              className="text-white/60 hover:text-white"
-            >
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowNodePanel(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <Plus size={20} />
+              </button>
+              <button
+                onClick={() => setShowNodePanel(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center bg-gray-800 rounded-lg border border-gray-700 px-3 py-2 mb-4">
