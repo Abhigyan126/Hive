@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Handle, Position } from 'reactflow';
 import Editor from '@monaco-editor/react';
-import { Save, Eye, Code, Settings, FileText, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Save, Eye, Code, Settings, FileText, ArrowLeft, AlertCircle, X } from 'lucide-react';
 
 // Setup Monaco Editor with Python autocomplete
 const setupMonacoEditor = (monaco) => {
@@ -37,7 +37,12 @@ const setupMonacoEditor = (monaco) => {
 export default function CreateBee() {
   const [nodeName, setNodeName] = useState('Custom API Node');
   const [nodeColor, setNodeColor] = useState('#facc15');
-  const [activeTab, setActiveTab] = useState('config'); // config, form, code
+  const [activeTab, setActiveTab] = useState('config');
+  
+  // Open modal state
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [savedConfigurations, setSavedConfigurations] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Configuration for handles (connection points)
   const [handlesConfig, setHandlesConfig] = useState(`{
@@ -51,7 +56,7 @@ export default function CreateBee() {
     },
     {
       "id": "result_output",
-      "type": "source",
+      "type": "source", 
       "position": "right",
       "name": "output_result",
       "color": "#facc15"
@@ -176,6 +181,61 @@ def execute(input_data):
 
   const editorRef = useRef(null);
 
+  // API endpoints
+  const API_BASE = 'http://127.0.0.1:5001/api';
+
+  // Search saved configurations
+  const searchConfigurations = async () => {
+    setSearchLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/create-bee-search`);
+      if (response.ok) {
+        const data = await response.json();
+        setSavedConfigurations(data);
+      } else {
+        console.error('Failed to fetch configurations');
+        alert('Failed to fetch configurations');
+      }
+    } catch (error) {
+      console.error('Error fetching configurations:', error);
+      alert('Error fetching configurations. Make sure the backend is running on port 5001.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Open modal handler
+  const handleOpenClick = () => {
+    setShowOpenModal(true);
+    searchConfigurations();
+  };
+
+  // Load a configuration
+  const loadConfiguration = async (configId) => {
+    try {
+      const response = await fetch(`${API_BASE}/create-bee-fetch/${configId}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Load the configuration data
+        setNodeName(data.name || 'Custom API Node');
+        setNodeColor(data.color || '#facc15');
+        setHandlesConfig(JSON.stringify(data.handles || { handles: [] }, null, 2));
+        setFormTemplate(JSON.stringify(data.formTemplate || { fields: [] }, null, 2));
+        setNodeCode(data.code || '');
+        
+        setShowOpenModal(false);
+        alert('Configuration loaded successfully!');
+      } else {
+        console.error('Failed to load configuration');
+        alert('Failed to load configuration');
+      }
+    } catch (error) {
+      console.error('Error loading configuration:', error);
+      alert('Error loading configuration. Make sure the backend is running on port 5001.');
+    }
+  };
+
   // Parse and validate JSON (without setting state during render)
   const parseJSON = (jsonString) => {
     try {
@@ -282,7 +342,7 @@ def execute(input_data):
   };
 
   // Save node configuration
-  const saveNode = () => {
+  const saveNode = async () => {
     // Check for JSON errors
     if (errors.handles) {
       alert(`Please fix handles configuration JSON error: ${errors.handles}`);
@@ -320,16 +380,25 @@ def execute(input_data):
       }
     };
 
-    console.log('Node Configuration:', nodeConfig);
+    try {
+      // Save to backend API
+      const response = await fetch(`${API_BASE}/create-bee-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nodeConfig)
+      });
 
-    // Here you would send to backend:
-    // fetch('/api/custom-nodes', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(nodeConfig)
-    // });
-
-    alert('Node configuration saved successfully! (Check console for output)');
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Node configuration saved successfully! ID: ${data.id}`);
+      } else {
+        const errorData = await response.json();
+        alert(`Error saving configuration: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error saving configuration:', error);
+      alert('Error saving configuration. Make sure the backend is running on port 5001.');
+    }
   };
 
   // Preview node component
@@ -407,20 +476,80 @@ def execute(input_data):
     </div>
   );
 
+  // Open Modal Component
+  const OpenModal = () => (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">Open Saved Configuration</h3>
+          <button
+            onClick={() => setShowOpenModal(false)}
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto">
+          {searchLoading ? (
+            <div className="text-center text-white/60 py-8">
+              Loading configurations...
+            </div>
+          ) : savedConfigurations.length === 0 ? (
+            <div className="text-center text-white/60 py-8">
+              No saved configurations found.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {savedConfigurations.map((config) => (
+                <div
+                  key={config.id}
+                  onClick={() => loadConfiguration(config.id)}
+                  className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-white font-medium">{config.name}</h4>
+                    <span 
+                      className="w-4 h-4 rounded-full border border-gray-600"
+                      style={{ backgroundColor: config.color }}
+                    />
+                  </div>
+                  <p className="text-white/60 text-sm mb-2">
+                    {config.description || 'No description'}
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-white/40">
+                    <span>Variables: {config.variables?.length || 0}</span>
+                    <span>{new Date(config.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col">
       {/* Header */}
-      <div className="bg-gray-900 border-b border-white/10 px-6 py-4 flex items-center justify-between">
+      <div className="bg-gray-900 border-b border-white/10 px-6 py-1 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button className="text-white/60 hover:text-white transition-colors">
             <ArrowLeft size={24} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold">Create Custom Bee</h1>
+            <h1 className="text-2xl font-bold">Bee Studio</h1>
             <p className="text-sm text-white/50">Design your own node type</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpenClick}
+            className="flex items-center rounded-lg p-1 transition-all text-white/80 hover:bg-white/20"
+          >
+            <Eye size={24} />
+          </button>
           <button
             onClick={saveNode}
             className="flex items-center rounded-lg p-1 transition-all text-white/80 hover:bg-white/20"
@@ -724,6 +853,9 @@ def execute(input_data):
           </div>
         </div>
       </div>
+      
+      {/* Open Modal */}
+      {showOpenModal && <OpenModal />}
     </div>
   );
 }

@@ -73,6 +73,23 @@ def init_db():
         )
     """)
 
+    # Create the bee_configurations table to store custom node configurations
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bee_configurations (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            color TEXT DEFAULT '#facc15',
+            handles TEXT NOT NULL,
+            form_template TEXT NOT NULL,
+            code TEXT NOT NULL,
+            variables TEXT,
+            validation TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -426,6 +443,173 @@ def execute_hive(hive_name):
         "results": results,
         "final_data": {hive_key: to_plain(data[hive_key])}
     }), 200
+
+# --- Bee Configuration API Endpoints ---
+
+@app.route('/api/create-bee-save', methods=['POST'])
+def save_bee_configuration():
+    """
+    Save a new bee configuration.
+    Expects: name, color, handles, formTemplate, code, variables, validation
+    Returns: saved configuration with ID
+    """
+    data = request.get_json()
+
+    # Input validation
+    if not data:
+        return jsonify({'error': 'No data provided.'}), 400
+
+    # Extract required fields
+    name = data.get('name')
+    color = data.get('color', '#facc15')
+    handles = data.get('handles')
+    form_template = data.get('formTemplate')
+    code = data.get('code')
+    variables = data.get('variables', [])
+    validation = data.get('validation')
+    description = data.get('description', '')
+
+    # Validate required fields
+    if not name:
+        return jsonify({'error': 'Configuration name is required.'}), 400
+    if not handles:
+        return jsonify({'error': 'Handles configuration is required.'}), 400
+    if not form_template:
+        return jsonify({'error': 'Form template is required.'}), 400
+    if not code:
+        return jsonify({'error': 'Node code is required.'}), 400
+
+    # Generate unique ID and timestamps
+    config_id = str(uuid.uuid4())
+    current_time = datetime.now().isoformat()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Convert complex objects to JSON strings
+        handles_json = json.dumps(handles)
+        form_template_json = json.dumps(form_template)
+        variables_json = json.dumps(variables)
+        validation_json = json.dumps(validation) if validation else None
+
+        # Insert into database
+        cursor.execute("""
+            INSERT INTO bee_configurations 
+            (id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (config_id, name, description, color, handles_json, form_template_json, code, 
+              variables_json, validation_json, current_time, current_time))
+
+        conn.commit()
+
+        return jsonify({
+            'id': config_id,
+            'message': 'Configuration saved successfully.',
+            'name': name,
+            'created_at': current_time
+        }), 201
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while saving configuration.'}), 500
+
+@app.route('/api/create-bee-search', methods=['GET'])
+def search_bee_configurations():
+    """
+    Search and return all saved bee configurations.
+    Returns: List of configuration summaries
+    """
+    conn = get_db_connection()
+    
+    try:
+        # Fetch all configurations, ordered by creation date (newest first)
+        configs_data = conn.execute("""
+            SELECT id, name, description, color, variables, created_at 
+            FROM bee_configurations 
+            ORDER BY created_at DESC
+        """).fetchall()
+
+        # Convert to list of dictionaries
+        configurations = []
+        for row in configs_data:
+            config = dict(row)
+            
+            # Parse variables JSON if it exists
+            if config['variables']:
+                try:
+                    config['variables'] = json.loads(config['variables'])
+                except json.JSONDecodeError:
+                    config['variables'] = []
+            else:
+                config['variables'] = []
+            
+            configurations.append(config)
+
+        return jsonify(configurations), 200
+
+    except Exception as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while searching configurations.'}), 500
+
+@app.route('/api/create-bee-fetch/<config_id>', methods=['GET'])
+def fetch_bee_configuration(config_id):
+    """
+    Fetch a specific bee configuration by ID.
+    Returns: Complete configuration data
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Fetch the configuration
+        config_data = cursor.execute("""
+            SELECT id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at
+            FROM bee_configurations 
+            WHERE id = ?
+        """, (config_id,)).fetchone()
+
+        if not config_data:
+            return jsonify({'error': f'Configuration with ID {config_id} not found.'}), 404
+
+        # Convert to dictionary
+        config = dict(config_data)
+
+        # Parse JSON fields
+        try:
+            config['handles'] = json.loads(config['handles']) if config['handles'] else {}
+        except json.JSONDecodeError:
+            config['handles'] = {}
+
+        try:
+            config['formTemplate'] = json.loads(config['form_template']) if config['form_template'] else {}
+        except json.JSONDecodeError:
+            config['formTemplate'] = {}
+
+        try:
+            config['variables'] = json.loads(config['variables']) if config['variables'] else []
+        except json.JSONDecodeError:
+            config['variables'] = []
+
+        try:
+            config['validation'] = json.loads(config['validation']) if config['validation'] else {}
+        except json.JSONDecodeError:
+            config['validation'] = {}
+
+        # Remove the original JSON string fields
+        config.pop('form_template', None)
+
+        # Rename fields to match frontend expectations
+        if 'description' in config:
+            config['description'] = config['description'] or ''
+
+        return jsonify(config), 200
+
+    except Exception as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while fetching configuration.'}), 500
+
 
 
 # --- Running the Application ---
