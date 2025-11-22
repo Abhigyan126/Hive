@@ -77,7 +77,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS bee_configurations (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
+            name TEXT NOT NULL UNIQUE,
             description TEXT,
             color TEXT DEFAULT '#facc15',
             handles TEXT NOT NULL,
@@ -479,8 +479,6 @@ def save_bee_configuration():
     if not code:
         return jsonify({'error': 'Node code is required.'}), 400
 
-    # Generate unique ID and timestamps
-    config_id = str(uuid.uuid4())
     current_time = datetime.now().isoformat()
 
     conn = get_db_connection()
@@ -493,27 +491,100 @@ def save_bee_configuration():
         variables_json = json.dumps(variables)
         validation_json = json.dumps(validation) if validation else None
 
-        # Insert into database
-        cursor.execute("""
-            INSERT INTO bee_configurations 
-            (id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (config_id, name, description, color, handles_json, form_template_json, code, 
-              variables_json, validation_json, current_time, current_time))
+        # New behavior:
+        # - If an 'id' is provided in the payload and a record with that id exists -> update that id
+        # - If an 'id' is provided and no such record exists -> insert a new record using that id
+        # - If no 'id' provided -> fall back to name-based behavior (update existing by name, otherwise create new)
+        provided_id = data.get('id')
+
+        if provided_id:
+            # Try to find by id first
+            existing_by_id = cursor.execute(
+                "SELECT id, created_at, name FROM bee_configurations WHERE id = ?",
+                (provided_id,)
+            ).fetchone()
+
+            if existing_by_id:
+                # Update the existing row identified by id
+                config_id = existing_by_id['id']
+                created_at = existing_by_id['created_at']
+                cursor.execute("""
+                    UPDATE bee_configurations
+                    SET name = ?, description = ?, color = ?, handles = ?, form_template = ?,
+                        code = ?, variables = ?, validation = ?, updated_at = ?
+                    WHERE id = ?
+                """, (name, description, color, handles_json, form_template_json, code,
+                      variables_json, validation_json, current_time, config_id))
+                message = 'Configuration updated successfully.'
+                status_code = 200
+            else:
+                # No existing record with this id; ensure name uniqueness then insert with provided id
+                conflict = cursor.execute(
+                    "SELECT id FROM bee_configurations WHERE name = ?",
+                    (name,)
+                ).fetchone()
+                if conflict:
+                    # Name already used by another record -> conflict
+                    conn.rollback()
+                    return jsonify({'error': f"A configuration with the name '{name}' already exists."}), 409
+
+                config_id = provided_id
+                created_at = current_time
+                cursor.execute("""
+                    INSERT INTO bee_configurations
+                    (id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (config_id, name, description, color, handles_json, form_template_json, code,
+                      variables_json, validation_json, created_at, current_time))
+                message = 'Configuration saved successfully.'
+                status_code = 201
+        else:
+            # No id provided -> fallback to name-based behavior
+            existing_config = cursor.execute(
+                "SELECT id, created_at FROM bee_configurations WHERE name = ?",
+                (name,)
+            ).fetchone()
+
+            if existing_config:
+                # Update existing by name
+                config_id = existing_config['id']
+                created_at = existing_config['created_at']
+                cursor.execute("""
+                    UPDATE bee_configurations
+                    SET description = ?, color = ?, handles = ?, form_template = ?,
+                        code = ?, variables = ?, validation = ?, updated_at = ?, name = ?
+                    WHERE id = ?
+                """, (description, color, handles_json, form_template_json, code,
+                      variables_json, validation_json, current_time, name, config_id))
+                message = 'Configuration updated successfully.'
+                status_code = 200
+            else:
+                # Insert new record with a generated id
+                config_id = str(uuid.uuid4())
+                created_at = current_time
+                cursor.execute("""
+                    INSERT INTO bee_configurations
+                    (id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (config_id, name, description, color, handles_json, form_template_json, code,
+                      variables_json, validation_json, created_at, current_time))
+                message = 'Configuration saved successfully.'
+                status_code = 201
 
         conn.commit()
 
         return jsonify({
             'id': config_id,
-            'message': 'Configuration saved successfully.',
+            'message': message,
             'name': name,
-            'created_at': current_time
-        }), 201
+            'created_at': created_at,
+            'updated_at': current_time # Always return the latest update time
+        }), status_code
 
     except Exception as e:
         conn.rollback()
         print(f"Database error: {e}")
-        return jsonify({'error': 'An internal error occurred while saving configuration.'}), 500
+        return jsonify({'error': 'An internal error occurred while saving/updating configuration.'}), 500
 
 @app.route('/api/create-bee-search', methods=['GET'])
 def search_bee_configurations():
@@ -522,12 +593,12 @@ def search_bee_configurations():
     Returns: List of configuration summaries
     """
     conn = get_db_connection()
-    
+
     try:
         # Fetch all configurations, ordered by creation date (newest first)
         configs_data = conn.execute("""
-            SELECT id, name, description, color, variables, created_at 
-            FROM bee_configurations 
+            SELECT id, name, description, color, variables, created_at
+            FROM bee_configurations
             ORDER BY created_at DESC
         """).fetchall()
 
@@ -535,7 +606,7 @@ def search_bee_configurations():
         configurations = []
         for row in configs_data:
             config = dict(row)
-            
+
             # Parse variables JSON if it exists
             if config['variables']:
                 try:
@@ -544,7 +615,7 @@ def search_bee_configurations():
                     config['variables'] = []
             else:
                 config['variables'] = []
-            
+
             configurations.append(config)
 
         return jsonify(configurations), 200
@@ -566,7 +637,7 @@ def fetch_bee_configuration(config_id):
         # Fetch the configuration
         config_data = cursor.execute("""
             SELECT id, name, description, color, handles, form_template, code, variables, validation, created_at, updated_at
-            FROM bee_configurations 
+            FROM bee_configurations
             WHERE id = ?
         """, (config_id,)).fetchone()
 
@@ -610,12 +681,62 @@ def fetch_bee_configuration(config_id):
         print(f"Database error: {e}")
         return jsonify({'error': 'An internal error occurred while fetching configuration.'}), 500
 
+@app.route('/api/create-bee-check-name/<name>', methods=['GET'])
+def check_bee_configuration_name(name):
+    """
+    Check if a bee configuration with the given name already exists.
+    Returns: {'exists': true/false, 'id': '...' (if exists)}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        existing_config = cursor.execute(
+            "SELECT id FROM bee_configurations WHERE name = ?",
+            (name,)
+        ).fetchone()
+
+        if existing_config:
+            return jsonify({'exists': True, 'id': existing_config['id']}), 200
+        else:
+            return jsonify({'exists': False}), 200
+
+    except Exception as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while checking configuration name.'}), 500
+
+
+@app.route('/api/create-bee-delete/<config_id>', methods=['DELETE'])
+def delete_bee_configuration(config_id):
+    """
+    Delete a bee configuration by ID.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        existing = cursor.execute(
+            "SELECT id, name FROM bee_configurations WHERE id = ?",
+            (config_id,)
+        ).fetchone()
+
+        if not existing:
+            return jsonify({'error': f'Configuration with ID {config_id} not found.'}), 404
+
+        cursor.execute("DELETE FROM bee_configurations WHERE id = ?", (config_id,))
+        conn.commit()
+
+        return jsonify({'message': 'Configuration deleted successfully.', 'id': config_id}), 200
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'An internal error occurred while deleting configuration.'}), 500
 
 
 # --- Running the Application ---
 if __name__ == '__main__':
     print(f"Starting Hive Manager API on http://127.0.0.1:{PORT_NUMBER}")
     print(f"Database file: {os.path.abspath(DATABASE)}")
-
     # Run the application on the specified non-default port
     app.run(debug=True, port=PORT_NUMBER)

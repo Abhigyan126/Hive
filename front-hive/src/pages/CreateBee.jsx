@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Handle, Position } from 'reactflow';
+// reactflow imports removed because not used in this component
 import Editor from '@monaco-editor/react';
-import { Save, Eye, Code, Settings, FileText, ArrowLeft, AlertCircle, X } from 'lucide-react';
+import { Save, Eye, Code, Settings, FileText, ArrowLeft, AlertCircle, X, Trash } from 'lucide-react';
 
 // Setup Monaco Editor with Python autocomplete
 const setupMonacoEditor = (monaco) => {
@@ -179,6 +179,12 @@ def execute(input_data):
     validation: null,
   });
 
+  // Currently loaded configuration id (if editing an existing bee)
+  const [configId, setConfigId] = useState(null);
+
+  // Preview values for form fields (allow interacting with selects in preview)
+  const [previewValues, setPreviewValues] = useState({});
+
   const editorRef = useRef(null);
 
   // API endpoints
@@ -223,6 +229,7 @@ def execute(input_data):
         setHandlesConfig(JSON.stringify(data.handles || { handles: [] }, null, 2));
         setFormTemplate(JSON.stringify(data.formTemplate || { fields: [] }, null, 2));
         setNodeCode(data.code || '');
+        setConfigId(data.id || null);
         
         setShowOpenModal(false);
         alert('Configuration loaded successfully!');
@@ -255,13 +262,13 @@ def execute(input_data):
   const parsedForm = formResult.data;
   const formFields = parsedForm?.fields || [];
 
-  // Update errors only when JSON changes (using useEffect)
+  // Update errors when parsed JSON results change
   useEffect(() => {
     setErrors({
       handles: handlesResult.error,
       form: formResult.error
     });
-  }, [handlesConfig, formTemplate]);
+  }, [handlesResult.error, formResult.error]);
 
   // Extract $variables from code
   const extractVariables = (code) => {
@@ -366,6 +373,8 @@ def execute(input_data):
     }
 
     const nodeConfig = {
+      // include id when editing existing configuration so backend updates instead of inserting
+      ...(configId ? { id: configId } : {}),
       name: nodeName,
       color: nodeColor,
       handles: parsedHandles,
@@ -390,6 +399,8 @@ def execute(input_data):
 
       if (response.ok) {
         const data = await response.json();
+        // Save returned id (useful for subsequent updates/deletes)
+        if (data.id) setConfigId(data.id);
         alert(`Node configuration saved successfully! ID: ${data.id}`);
       } else {
         const errorData = await response.json();
@@ -398,6 +409,63 @@ def execute(input_data):
     } catch (error) {
       console.error('Error saving configuration:', error);
       alert('Error saving configuration. Make sure the backend is running on port 5001.');
+    }
+  };
+
+  // Delete configuration by id
+  const deleteConfiguration = async (id) => {
+    if (!id) {
+      alert('No configuration id provided');
+      return;
+    }
+
+  if (!window.confirm('Are you sure you want to delete this configuration? This cannot be undone.')) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/create-bee-delete/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        alert('Configuration deleted successfully');
+        // If the deleted config is currently loaded, reset form to defaults
+        if (configId === id) {
+          setConfigId(null);
+          setNodeName('Custom API Node');
+          setNodeColor('#facc15');
+          setHandlesConfig(`{
+  "handles": [
+    {
+      "id": "data_input",
+      "type": "target",
+      "position": "left",
+      "name": "input_data",
+      "color": "#facc15"
+    },
+    {
+      "id": "result_output",
+      "type": "source", 
+      "position": "right",
+      "name": "output_result",
+      "color": "#facc15"
+    }
+  ]
+}`);
+          setFormTemplate(`{
+  "fields": []
+}`);
+          setNodeCode('');
+        }
+
+        // Refresh list if modal open
+        if (showOpenModal) searchConfigurations();
+      } else {
+        const errorData = await response.json();
+        alert(`Error deleting configuration: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting configuration:', error);
+      alert('Error deleting configuration. Make sure the backend is running on port 5001.');
     }
   };
 
@@ -464,12 +532,32 @@ def execute(input_data):
             {field.label}
             {field.required && <span className="text-red-400 ml-1">*</span>}
           </label>
-          <input
-            type={field.type}
-            placeholder={field.placeholder}
-            className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled
-          />
+          {field.type === 'select' ? (
+            <select
+              className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={previewValues[field.name] ?? (Array.isArray(field.options) && field.options.length > 0 ? field.options[0] : '')}
+              onChange={(e) => setPreviewValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+            >
+              {/* optional placeholder when no value selected */}
+              {!previewValues[field.name] && <option value="" disabled hidden>Choose...</option>}
+              {(Array.isArray(field.options) ? field.options : []).map((opt, idx) => (
+                <option key={idx} value={opt} className="text-black">{opt}</option>
+              ))}
+            </select>
+          ) : field.type === 'textarea' ? (
+            <textarea
+              placeholder={field.placeholder}
+              className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white text-sm h-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled
+            />
+          ) : (
+            <input
+              type={field.type || 'text'}
+              placeholder={field.placeholder}
+              className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled
+            />
+          )}
           <div className="text-xs text-white/40 mt-1">Variable: ${field.name}</div>
         </div>
       ))}
@@ -501,28 +589,39 @@ def execute(input_data):
             </div>
           ) : (
             <div className="space-y-3">
-              {savedConfigurations.map((config) => (
-                <div
-                  key={config.id}
-                  onClick={() => loadConfiguration(config.id)}
-                  className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-all"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-white font-medium">{config.name}</h4>
-                    <span 
-                      className="w-4 h-4 rounded-full border border-gray-600"
-                      style={{ backgroundColor: config.color }}
-                    />
+                {savedConfigurations.map((config) => (
+                  <div
+                    key={config.id}
+                    className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-all flex items-start justify-between"
+                  >
+                    <div className="flex-1 pr-3" onClick={() => loadConfiguration(config.id)}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-white font-medium">{config.name}</h4>
+                        <span 
+                          className="w-4 h-4 rounded-full border border-gray-600"
+                          style={{ backgroundColor: config.color }}
+                        />
+                      </div>
+                      <p className="text-white/60 text-sm mb-2">
+                        {config.description || 'No description'}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-white/40">
+                        <span>Variables: {config.variables?.length || 0}</span>
+                        <span>{new Date(config.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this configuration?')) deleteConfiguration(config.id); }}
+                        className="p-2 rounded bg-red-600/20 hover:bg-red-600/30 text-red-200"
+                        title="Delete configuration"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-white/60 text-sm mb-2">
-                    {config.description || 'No description'}
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-white/40">
-                    <span>Variables: {config.variables?.length || 0}</span>
-                    <span>{new Date(config.created_at).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
@@ -555,6 +654,16 @@ def execute(input_data):
             className="flex items-center rounded-lg p-1 transition-all text-white/80 hover:bg-white/20"
           >
             <Save size={24} />
+          </button>
+          <button
+            onClick={() => {
+              if (!configId) return alert('No configuration loaded to delete');
+              deleteConfiguration(configId);
+            }}
+            className="flex items-center rounded-lg p-1 transition-all text-white/80 hover:bg-white/20"
+            title="Delete loaded configuration"
+          >
+            <Trash size={20} />
           </button>
         </div>
       </div>
@@ -809,7 +918,8 @@ def execute(input_data):
                   <ul className="mt-2 space-y-1">
                     <li>• <strong>name:</strong> Variable name (must match $variable in code)</li>
                     <li>• <strong>label:</strong> User-friendly label</li>
-                    <li>• <strong>type:</strong> 'text', 'number', 'password', 'textarea'</li>
+                    <li>• <strong>type:</strong> 'text', 'number', 'password', 'textarea', 'select'</li>
+                    <li>• <strong>options:</strong> (for <em>select</em>) array of option values e.g. ["=","!=","&gt;","&lt;","&gt;=","&lt;="]</li>
                     <li>• <strong>required:</strong> true/false (default: false)</li>
                     <li>• <strong>description:</strong> Help text for users</li>
                   </ul>
